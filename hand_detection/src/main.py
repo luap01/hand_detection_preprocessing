@@ -56,6 +56,7 @@ class PipelineConfig:
     input_path: str = "data/orbbec/"
     camera_path: str = "data/"
     output_path: str = "preprocessed_OR_data"
+    verbose: bool = False
     camera_name: str = "camera01"
     orbbec_cam: bool = True if camera_name not in ['camera05', 'camera06'] else False
     image_prefix: str = ""
@@ -133,22 +134,31 @@ class HandDetectionPipeline:
     def setup_output_dirs(self):
         """Create output directories"""
         output_path = Path(self.config.output_path)
-        self.dirs = {
-            'blanks': output_path / 'blanks',
-            'bboxes': output_path / 'bboxes',
-            'preds': output_path / 'preds',
-            'original': output_path / 'original',
-            'shifted_roi': output_path / 'shifted_roi',
-            'json': output_path / 'json',
-            'log': output_path / 'log'
-        }
+        if self.config.verbose:
+            self.dirs = {
+                'cropped': output_path / 'cropped',
+                'bboxes': output_path / 'bboxes',
+                'preds': output_path / 'preds',
+                'original': output_path / 'original',
+                'shifted_roi': output_path / 'shifted_roi',
+                'json': output_path / 'json',
+                'log': output_path / 'log'
+            }
+        else:
+            self.dirs = {
+                'cropped': output_path / 'cropped',
+                'json': output_path / 'json',
+                'log': output_path / 'log'
+            }
+
         
         for dir_path in self.dirs.values():
             dir_path.mkdir(parents=True, exist_ok=True)
         
         for hand_side in ['left', 'right']:
-            for dir_name in ['blanks', 'bboxes', 'preds']:
-                (self.dirs[dir_name] / hand_side).mkdir(parents=True, exist_ok=True)
+            for dir_name in ['cropped', 'bboxes', 'preds']:
+                if dir_name in self.dirs:
+                    (self.dirs[dir_name] / hand_side).mkdir(parents=True, exist_ok=True)
     
     def load_camera_params(self):
         """Load camera calibration parameters"""
@@ -542,9 +552,10 @@ class HandDetectionPipeline:
             bbox = self.compute_shifted_bbox(roi.copy(), current_hand_side, shift_multiplier)
             cropped_img, bbox_origin = self.crop_to_bbox(image.copy(), bbox)
             cropped_results, _ = self.detect_hands_with_enhancement(cropped_img)
-
-            full_vis = self.draw_landmarks_and_bbox(image.copy(), None, bbox, roi)
-            cv2.imwrite(self.dirs['shifted_roi'] / f"{img_idx}_{self.config.bbox_shift}_{retry_counter}.jpg", full_vis)
+            
+            if self.config.verbose:
+                full_vis = self.draw_landmarks_and_bbox(image.copy(), None, bbox, roi)
+                cv2.imwrite(self.dirs['shifted_roi'] / f"{img_idx}_{self.config.bbox_shift}_{retry_counter}.jpg", full_vis)
 
             if len(cropped_results) > 0:
                 detected_detection = cropped_results[0]
@@ -559,18 +570,19 @@ class HandDetectionPipeline:
                         current_image_size=cropped_img.shape[:2]
                 )
 
-                cv2.imwrite(self.dirs['preds'] / detected_hand_side / f"{img_idx}.jpg", final_crop)
+                if self.config.verbose:
+                    cv2.imwrite(self.dirs['preds'] / detected_hand_side / f"{img_idx}.jpg", final_crop)
 
                 if retry_counter >= 2:
                     temp["people"][0][f"hand_{current_hand_side}_keypoints_2d"] = data["people"][0][f"hand_{prev_detected_handside}_keypoints_2d"]
                     temp["people"][0][f"hand_{current_hand_side}_shift"] = data["people"][0][f"hand_{prev_detected_handside}_shift"]
                     temp["people"][0][f"hand_{current_hand_side}_conf"] = data["people"][0][f"hand_{prev_detected_handside}_conf"]
-                    cv2.imwrite(self.dirs['blanks'] / current_hand_side / f"{img_idx}.jpg", blank_img)
+                    cv2.imwrite(self.dirs['cropped'] / current_hand_side / f"{img_idx}.jpg", blank_img)
                     tmp_data, check = self.check_diff_hand(detected_detection, prev_detected_handside, current_hand_side, cropped_img, bbox_origin, final_origin, temp)
                 else:    
                     tmp_data, check = self.check_diff_hand(detected_detection, current_hand_side, prev_detected_handside, cropped_img, bbox_origin, final_origin, temp)
                 if check:
-                    cv2.imwrite(self.dirs['blanks'] / detected_hand_side / f"{img_idx}.jpg", final_crop)
+                    cv2.imwrite(self.dirs['cropped'] / detected_hand_side / f"{img_idx}.jpg", final_crop)
                     return tmp_data
 
             if retry_counter % 2 == 0:
@@ -592,28 +604,29 @@ class HandDetectionPipeline:
         
         # Initial crop from original image
         blank_img, crop_origin = self.crop_fixed_size(image.copy(), detection)
-        cv2.imwrite(str(self.dirs['blanks'] / str(detection.hand_type) / f"{img_idx}.jpg"), blank_img)
+        cv2.imwrite(str(self.dirs['cropped'] / str(detection.hand_type) / f"{img_idx}.jpg"), blank_img)
         
 
         # Get keypoints data
         keypoint_data = self.detector.get_keypoints_data(detection, image.shape[:2], [crop_origin])
         data["people"][0].update(keypoint_data)
         
-        # Create visualization with landmarks
-        vis_img = image.copy()
-        vis_img = self.detector.draw_landmarks(detection, vis_img)
+        if self.config.verbose:
+            # Create visualization with landmarks
+            vis_img = image.copy()
+            vis_img = self.detector.draw_landmarks(detection, vis_img)
         
-        # Crop visualization
-        cropped_vis, _ = self.crop_fixed_size(vis_img, detection)
-        cv2.imwrite(self.dirs['preds'] / str(detection.hand_type) / f"{img_idx}.jpg", cropped_vis)
-        
-        # Save original image
-        cv2.imwrite(self.dirs['original'] / f"{img_idx}.jpg", image)
+            # Crop visualization
+            cropped_vis, _ = self.crop_fixed_size(vis_img, detection)
+            cv2.imwrite(self.dirs['preds'] / str(detection.hand_type) / f"{img_idx}.jpg", cropped_vis)
+    
+            cv2.imwrite(self.dirs['original'] / f"{img_idx}.jpg", image)
         
         # Try shifted bbox approach with retry mechanism
         roi = self.get_roi_points(detection, image.shape)
         bbox_img = self.draw_bbox(image.copy(), roi)
-        cv2.imwrite(self.dirs['bboxes'] / str(detection.hand_type) / f"{img_idx}.jpg", bbox_img)
+        if self.config.verbose:
+            cv2.imwrite(self.dirs['bboxes'] / str(detection.hand_type) / f"{img_idx}.jpg", bbox_img)
 
         # Create a new MediaPipe instance with max_hands=1 for retry logic
         self.detector.__init__(
@@ -641,8 +654,9 @@ class HandDetectionPipeline:
         data = {"people": [{"hand_left_shift": [], "hand_left_keypoints_2d": [], "hand_left_conf": [],
                            "hand_right_shift": [], "hand_right_keypoints_2d": [], "hand_left_conf": []}]}
         
-        # Save original image
-        cv2.imwrite(self.dirs['original'] / f"{img_idx}.jpg", image)
+        if self.config.verbose:
+            # Save original image
+            cv2.imwrite(self.dirs['original'] / f"{img_idx}.jpg", image)
 
         if detections[0].landmarks[0][0] < detections[1].landmarks[0][0]:
             detections[0].hand_type = "left"
@@ -655,19 +669,20 @@ class HandDetectionPipeline:
         for detection in detections:
             # Crop around each hand
             blank_img, crop_origin = self.crop_fixed_size(image.copy(), detection)
-            cv2.imwrite(self.dirs['blanks'] / str(detection.hand_type) / f"{img_idx}.jpg", blank_img)
+            cv2.imwrite(self.dirs['cropped'] / str(detection.hand_type) / f"{img_idx}.jpg", blank_img)
 
             # Get keypoints
             keypoint_data = self.detector.get_keypoints_data(detection, image.shape[:2], [crop_origin])
             data["people"][0].update(keypoint_data)
 
-            # Create visualization with landmarks
-            vis_img = image.copy()
-            vis_img = self.detector.draw_landmarks(detection, vis_img)
-            
-            # Crop visualization
-            cropped_vis, _ = self.crop_fixed_size(vis_img, detection)
-            cv2.imwrite(self.dirs['preds'] / str(detection.hand_type) / f"{img_idx}.jpg", cropped_vis)
+            if self.config.verbose:
+                # Create visualization with landmarks
+                vis_img = image.copy()
+                vis_img = self.detector.draw_landmarks(detection, vis_img)
+                
+                # Crop visualization
+                cropped_vis, _ = self.crop_fixed_size(vis_img, detection)
+                cv2.imwrite(self.dirs['preds'] / str(detection.hand_type) / f"{img_idx}.jpg", cropped_vis)
         
         return data
     
@@ -903,6 +918,7 @@ def main():
         parser.add_argument('--cam', type=int, default=1)
         parser.add_argument('--start', type=int, default=0)
         parser.add_argument('--end', type=int, default=20)
+        parser.add_argument('--verbose', type=bool, default=False)
         args = parser.parse_args()
 
         camera = f"camera0{args.cam}"
@@ -912,12 +928,13 @@ def main():
         print(camera)
         # Build paths relative to script directory
         base_path = script_dir.parent.parent.parent / "data"
-        output_path = script_dir.parent.parent / "output" / 'pre_processed_kps' / model / f"conf_{conf:.2f}" / camera 
+        output_path = script_dir.parent.parent.parent / "output" / f"{model}_{conf:.2f}" / camera 
 
         config = PipelineConfig(
             input_path=str(base_path / "orbbec" / camera),
             camera_path=str(base_path),
             output_path=str(output_path),
+            verbose=args.verbose,
             camera_name=camera,
             orbbec_cam=orbbec_cam,
             model=model,

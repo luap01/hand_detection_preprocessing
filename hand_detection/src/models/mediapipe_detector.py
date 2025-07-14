@@ -80,6 +80,7 @@ class MediaPipeHandDetector(HandDetector):
         for x, y, z in detection.landmarks:
             x = float(x * w) - x_min + x_orig
             y = float(y * h) - y_min + y_orig
+            z = float(z * w)
             keypoints.extend([x, y, z])
         
         return {

@@ -1,9 +1,10 @@
-# output
+# data
 data/
+output/
 
 .venv/
+.hand_detection/
 
-hand_detection/output/
 hand_detection/src/models/openpose_impl/model
 hand_detection/src/models/openpose_impl/images
 
