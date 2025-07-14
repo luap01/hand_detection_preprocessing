@@ -1,0 +1,11 @@
+opencv-python
+rootutils
+torch
+torchvision
+torchaudio
+mediapipe==0.10.7
+urllib3==1.26.18
+numpy==1.23.5
+protobuf==3.20.3
+scipy==1.13.1
+scikit-image
