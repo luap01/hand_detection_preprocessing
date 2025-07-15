@@ -82,8 +82,8 @@ def main():
         print(camera)
         
         # Build paths relative to script directory
-        base_path = script_dir.parent.parent.parent / "data" / "20250206_Testing"
-        output_path = script_dir.parent.parent.parent / "output" / f"{model}_{conf:.2f}" / camera 
+        base_path = script_dir.parent.parent / "data" / "20250206_Testing"
+        output_path = script_dir.parent.parent / "output" / f"{model}_{conf:.2f}" / camera 
 
         config = PipelineConfig(
             input_path=str(base_path / "orbbec" / camera),

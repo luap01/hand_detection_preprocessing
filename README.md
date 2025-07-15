@@ -1,6 +1,7 @@
 # Hand Detection Pipeline Module
 
-This module provides a clean, modular structure for hand detection and preprocessing tasks. The original monolithic `main.py` file has been refactored into focused, reusable components.
+The source code can be found in src/
+
 
 ## Module Structure
 
@@ -79,24 +80,3 @@ pipeline.run(start_idx=0, end_idx=100)
 # For faster processing with multiple threads
 pipeline.run_multithreaded(start_idx=0, end_idx=1000)
 ```
-
-## Benefits of Modular Structure
-
-1. **Maintainability**: Each module has a single responsibility
-2. **Testability**: Individual components can be unit tested
-3. **Reusability**: Components can be reused in other projects
-4. **Readability**: Code is organized logically and easier to understand
-5. **Extensibility**: New features can be added without affecting existing code
-6. **Debugging**: Issues can be isolated to specific modules
-
-## Migration from Original Code
-
-The original 965-line `main.py` has been split as follows:
-- **Lines 21-75**: Moved to `config.py`
-- **Lines 180-290**: Image operations moved to `image_ops.py`
-- **Lines 400-600**: Landmark operations moved to `landmark_ops.py`
-- **Lines 600-800**: Processing logic moved to `processing.py`
-- **Lines 76-179, 800-920**: Pipeline management moved to `pipeline.py`
-- **Lines 921-965**: Main function remains in `main.py`
-
-The new structure maintains full backward compatibility while providing much better organization. 
