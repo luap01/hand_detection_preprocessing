@@ -97,11 +97,17 @@ class HandDetectionPipeline:
 
         if self.config.model == "mediapipe":
             # Initialize detector
-            self.detector = MediaPipeHandDetector(
-                max_num_hands=self.config.max_num_hands,
+            self.detector_max_2 = MediaPipeHandDetector(
+                max_num_hands=2,
                 min_detection_confidence=self.config.min_detection_confidence,
                 min_tracking_confidence=self.config.min_tracking_confidence
             )
+            self.detector_max_1 = MediaPipeHandDetector(
+                max_num_hands=1,
+                min_detection_confidence=self.config.min_detection_confidence,
+                min_tracking_confidence=self.config.min_tracking_confidence
+            )
+            self.detector = self.detector_max_2 if self.config.max_num_hands == 2 else self.detector_max_1
         elif self.config.model == "openpose":
             self.detector = OpenPoseHandDetector(
                 max_num_hands=self.config.max_num_hands,
@@ -629,20 +635,12 @@ class HandDetectionPipeline:
             cv2.imwrite(self.dirs['bboxes'] / str(detection.hand_type) / f"{img_idx}.jpg", bbox_img)
 
         # Create a new MediaPipe instance with max_hands=1 for retry logic
-        self.detector.__init__(
-            max_num_hands=1, 
-            min_detection_confidence=self.config.min_detection_confidence, 
-            min_tracking_confidence=self.config.min_tracking_confidence
-        )
+        self.detector = self.detector_max_1
 
         # try to detect second hand
         data = self.detect_second_hand_or_retry(img_idx, image.copy(), blank_img, detection, roi, data)
         
-        self.detector.__init__(
-            max_num_hands=2, 
-            min_detection_confidence=self.config.min_detection_confidence, 
-            min_tracking_confidence=self.config.min_tracking_confidence
-        )
+        self.detector = self.detector_max_2
         return data
     
     def process_double_hands(self, image: np.ndarray, detections: List[HandDetection], 
@@ -924,10 +922,10 @@ def main():
         camera = f"camera0{args.cam}"
         orbbec_cam = True if camera not in ['camera05', 'camera06'] else False
         conf = 0.3
-        min_tracking_confidence = 0.75
+        min_tracking_confidence = 0.6
         print(camera)
         # Build paths relative to script directory
-        base_path = script_dir.parent.parent.parent / "data"
+        base_path = script_dir.parent.parent.parent / "data" / "20250206_Testing"
         output_path = script_dir.parent.parent.parent / "output" / f"{model}_{conf:.2f}" / camera 
 
         config = PipelineConfig(
