@@ -5,7 +5,7 @@ output/
 .venv/
 .hand_detection/
 
-hand_detection/src/models/openpose_impl/model
-hand_detection/src/models/openpose_impl/images
+src/models/openpose_impl/model
+src/models/openpose_impl/images
 
 .DS_Store
