@@ -108,52 +108,79 @@ class HandDetectionPipeline:
                 if dir_name in self.dirs:
                     (self.dirs[dir_name] / hand_side).mkdir(parents=True, exist_ok=True)
     
-    def process_image_thread_safe(self, img_idx: str) -> bool:
-        """Thread-safe version of process_image"""
+    def process_image_thread_safe(self, img_idx: str) -> str:
+        """Thread-safe version of process_image
+        
+        Returns:
+            str: Status of processing ('success', 'partial', 'failed')
+        """
         # Construct image path
         img_path = f"{self.config.input_path}/{self.config.image_prefix}{img_idx}{self.config.image_suffix}"
         
         # Load and undistort image
         image = self.image_ops.load_and_undistort_image(img_path)
         if image is None:
-            return False
+            if not self.config.verbose:
+                self.logger.warning(f"Image {img_idx}: No hand detected")
+            else:
+                self.logger.warning(f"Failed to load image {img_idx}")
+            return 'failed'
         
         # Detect hands
         detections, _ = self.image_ops.detect_hands_with_enhancement(image, self.detector)
         if len(detections) == 0:
-            self.logger.info(f"No hands detected in {img_idx}")
-            return False
+            if not self.config.verbose:
+                self.logger.warning(f"Image {img_idx}: No hand detected")
+            else:
+                self.logger.info(f"No hands detected in {img_idx}")
+            return 'failed'
         
         # Process based on number of hands
+        status = 'failed'
         if len(detections) == 2:
-            data = self.processor.process_double_hands(image, detections, img_idx)
+            data, status = self.processor.process_double_hands(image, detections, img_idx)
+            if not self.config.verbose:
+                self.logger.info(f"Image {img_idx}: Both hands detected")
         elif len(detections) == 1:
-            data = self.processor.process_single_hand(image, detections[0], img_idx, self.detector_max_1)
+            data, status = self.processor.process_single_hand(image, detections[0], img_idx, self.detector_max_1)
+            if not self.config.verbose:
+                if status == 'success':
+                    self.logger.info(f"Image {img_idx}: Both hands detected")
+                elif status == 'partial':
+                    self.logger.info(f"Image {img_idx}: Partially = one hand detected")
         else:
-            return False
+            if not self.config.verbose:
+                self.logger.warning(f"Image {img_idx}: No hand detected")
+            return 'failed'
         
         if data is None:
-            return False
+            if not self.config.verbose:
+                self.logger.warning(f"Image {img_idx}: No hand detected")
+            return 'failed'
         
         # Save JSON data
         json_path = self.dirs['json'] / f"{img_idx}.json"
         with open(json_path, 'w') as f:
             json.dump(data, f, indent=4)
         
-        return True
+        return status
     
-    def process_batch(self, indices: List[int]) -> Tuple[int, int]:
-        """Process a batch of images and return (processed_count, failed_count)"""
+    def process_batch(self, indices: List[int]) -> Tuple[int, int, int]:
+        """Process a batch of images and return (processed_count, partial_count, failed_count)"""
         batch_processed = 0
+        batch_partial = 0
         batch_failed = 0
         
         for idx in indices:
             img_idx = f"{idx:06d}"
             
             try:
-                if self.process_image_thread_safe(img_idx):
+                status = self.process_image_thread_safe(img_idx)
+                if status == 'success':
                     batch_processed += 1
-                else:
+                elif status == 'partial':
+                    batch_partial += 1
+                else:  # status == 'failed'
                     batch_failed += 1
             except Exception as e:
                 self.logger.error(f"Error processing {img_idx}: {e}")
@@ -162,9 +189,10 @@ class HandDetectionPipeline:
         # Thread-safe update of global counters
         with self.lock:
             self.processed_count += batch_processed
+            self.partial_count += batch_partial
             self.failed_count += batch_failed
         
-        return batch_processed, batch_failed
+        return batch_processed, batch_partial, batch_failed
     
     def create_batches(self, start_idx: int, end_idx: int) -> List[List[int]]:
         """Create batches of image indices"""
@@ -188,6 +216,7 @@ class HandDetectionPipeline:
         
         # Reset counters
         self.processed_count = 0
+        self.partial_count = 0
         self.failed_count = 0
         
         # Process batches with ThreadPoolExecutor
@@ -199,71 +228,84 @@ class HandDetectionPipeline:
             for future in as_completed(future_to_batch):
                 batch_idx = future_to_batch[future]
                 try:
-                    batch_processed, batch_failed = future.result()
+                    batch_processed, batch_partial, batch_failed = future.result()
                     self.logger.info(f"Batch {batch_idx + 1}/{len(batches)} completed: "
-                                   f"processed={batch_processed}, failed={batch_failed}")
+                                   f"both_hands={batch_processed}, partial={batch_partial}, failed={batch_failed}")
                 except Exception as e:
                     self.logger.error(f"Batch {batch_idx + 1} failed with error: {e}")
         
         self.logger.info(f"Multithreaded pipeline completed. "
-                        f"Total processed: {self.processed_count}, Total failed: {self.failed_count}")
+                        f"Both hands: {self.processed_count}, Partial: {self.partial_count}, Failed: {self.failed_count}")
 
-    def process_image(self, img_idx: str) -> bool:
-        """Process a single image (legacy method for backward compatibility)"""
+    def process_image(self, img_idx: str) -> str:
+        """Process a single image (legacy method for backward compatibility)
+        
+        Returns:
+            str: Status of processing ('success', 'partial', 'failed')
+        """
         # Construct image path
         img_path = f"{self.config.input_path}/{self.config.image_prefix}{img_idx}{self.config.image_suffix}"
         
         # Load and undistort image
         image = self.image_ops.load_and_undistort_image(img_path)
         if image is None:
-            return False
+            if self.config.verbose:
+                self.logger.warning(f"Failed to load image {img_idx}")
+            return 'failed'
         
         # Detect hands
         results, angle = self.image_ops.detect_hands_with_enhancement(image, self.detector)
         if len(results) == 0:
-            self.logger.info(f"No hands detected in {img_idx}")
-            return False
+            return 'failed'
         
-        if angle != 0:
+        if angle != 0 and self.config.verbose:
             self.logger.debug(f"Hands detected in {img_idx} using {angle}° rotation")
         
         # Process based on number of hands
+        status = 'failed'
         if len(results) == 2:
-            data = self.processor.process_double_hands(image, results, img_idx)
+            data, status = self.processor.process_double_hands(image, results, img_idx)
         elif len(results) > 0:
-            data = self.processor.process_single_hand(image, results[0], img_idx, self.detector_max_1)
+            data, status = self.processor.process_single_hand(image, results[0], img_idx, self.detector_max_1)
         else:
-            return False
+            return 'failed'
         
         if data is None:
-            return False
+            return 'failed'
         
         # Save JSON data
         json_path = self.dirs['json'] / f"{img_idx}.json"
         with open(json_path, 'w') as f:
             json.dump(data, f, indent=4)
         
-        return True
+        return status
 
     def run(self, start_idx: int, end_idx: int):
         """Run the pipeline on a range of images (single-threaded)"""
         self.logger.info(f"Starting single-threaded pipeline for images {start_idx:06d} to {end_idx:06d}")
         
         processed_count = 0
+        partial_count = 0
         failed_count = 0
         
         for idx in range(start_idx, end_idx):
             img_idx = f"{idx:06d}"
             
             try:
-                if self.process_image(img_idx):
+                status = self.process_image(img_idx)
+                if status == 'success':
                     processed_count += 1
-                else:
-                    failed_count += 1
-                    self.logger.warning(f"Failed to detect 2 hands for {img_idx}")
+                    self.logger.info(f"Image {img_idx}: Both hands detected")
+                elif status == 'partial':
+                    partial_count += 1
+                    self.logger.info(f"Image {img_idx}: One hand detected")
+                else:  # status == 'failed'
+                    failed_count += 1 
+                    self.logger.warning(f"Image {img_idx}: No hand detected")
             except Exception as e:
                 self.logger.error(f"Error processing {img_idx}: {e}")
                 failed_count += 1
         
-        self.logger.info(f"Single-threaded pipeline completed. Processed: {processed_count}, Failed: {failed_count}")
+        self.logger.info(f"Single-threaded pipeline completed. "
+                        f"Both hands: {processed_count}, Partial: {partial_count}, Failed: {failed_count}")
         self.detector.release()

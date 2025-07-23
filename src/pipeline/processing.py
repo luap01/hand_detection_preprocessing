@@ -108,9 +108,15 @@ class HandProcessor:
         return None
     
     def process_single_hand(self, image: np.ndarray, detection: HandDetection, 
-                           img_idx: str, detector_max_1) -> Optional[Dict[str, Any]]:
-        """Process image with single hand detection"""
-        self.logger.info(f"Processing {img_idx}: {detection.hand_type} hand detected")
+                           img_idx: str, detector_max_1) -> Tuple[Optional[Dict[str, Any]], str]:
+        """Process image with single hand detection
+        
+        Returns:
+            Tuple[Optional[Dict[str, Any]], str]: (data, status)
+            status can be 'success', 'partial', or 'failed'
+        """
+        if self.config.verbose:
+            self.logger.info(f"Processing {img_idx}: {detection.hand_type} hand detected")
         
         # Initialize data structure
         data = {"people": [{"hand_left_shift": [], "hand_left_keypoints_2d": [], "hand_left_conf": [], 
@@ -142,14 +148,29 @@ class HandProcessor:
             cv2.imwrite(str(self.dirs['bboxes'] / str(detection.hand_type) / f"{img_idx}.jpg"), bbox_img)
 
         # try to detect second hand
-        data = self.detect_second_hand_or_retry(img_idx, image.copy(), blank_img, detection, roi, data, detector_max_1)
+        second_hand_data = self.detect_second_hand_or_retry(img_idx, image.copy(), blank_img, detection, roi, data, detector_max_1)
         
-        return data
+        if second_hand_data is not None:
+            # Both hands detected successfully
+            if self.config.verbose:
+                self.logger.info(f"Processing {img_idx}: Both hands detected successfully")
+            return second_hand_data, 'success'
+        else:
+            # Only one hand detected, save as partial detection
+            if self.config.verbose:
+                self.logger.info(f"Processing {img_idx}: Second hand not detected, saving as partial detection")
+            return data, 'partial'
     
     def process_double_hands(self, image: np.ndarray, detections: List[HandDetection], 
-                           img_idx: str) -> Dict[str, Any]:
-        """Process image with two hands detected"""
-        self.logger.info(f"Processing {img_idx}: 2 hands detected")
+                           img_idx: str) -> Tuple[Dict[str, Any], str]:
+        """Process image with two hands detected
+        
+        Returns:
+            Tuple[Dict[str, Any], str]: (data, status)
+            status is always 'success' for double hands
+        """
+        if self.config.verbose:
+            self.logger.info(f"Processing {img_idx}: 2 hands detected")
         
         # Initialize data structure
         data = {"people": [{"hand_left_shift": [], "hand_left_keypoints_2d": [], "hand_left_conf": [],
@@ -185,4 +206,4 @@ class HandProcessor:
                 cropped_vis, _ = self.landmark_ops.crop_fixed_size(vis_img, detection)
                 cv2.imwrite(str(self.dirs['preds'] / str(detection.hand_type) / f"{img_idx}.jpg"), cropped_vis)
         
-        return data
+        return data, 'success'
