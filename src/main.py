@@ -1,15 +1,14 @@
 import argparse
 import time
 from pathlib import Path
+import rootutils
 
 from pipeline import PipelineConfig, HandDetectionPipeline
 
+rootutils.setup_root(__file__, ".project-root", pythonpath=True)
 
 def main():
     """Main execution function"""
-    # Get script directory
-    script_dir = Path(__file__)
-    
     # Configure pipeline
     model = "mediapipe"
     multi_run = False
@@ -70,6 +69,7 @@ def main():
     else:
         parser = argparse.ArgumentParser()
         parser.add_argument('--cam', type=int, default=1)
+        parser.add_argument('--dataset', type=str, default="20250519_Testing")
         parser.add_argument('--start', type=int, default=0)
         parser.add_argument('--end', type=int, default=20)
         parser.add_argument('--verbose', type=bool, default=False)
@@ -77,19 +77,23 @@ def main():
 
         camera = f"camera0{args.cam}"
         orbbec_cam = True if camera not in ['camera05', 'camera06'] else False
-        conf = 0.35
+        conf = 0.1
         min_tracking_confidence = 0.6
         print(camera)
 
-        subdir_name = "20250519_Testing"
+        subdir_name = args.dataset
         # Build paths relative to script directory
-        base_path = script_dir.parent.parent / "data" / subdir_name
-        output_path = script_dir.parent.parent / "output" / subdir_name / f"{model}_{conf:.2f}" / camera 
+        base_path = Path("../data") / subdir_name / "Aria" / "export" / "color"
+        output_path = Path("output") / subdir_name / f"{model}_{conf:.2f}" / camera 
 
         config = PipelineConfig(
-            input_path=str(base_path / camera),
-            camera_path=str(base_path),
+            input_path=str(base_path),
+            camera_path=str("data/input/20250519_Testing"),
+            # input_path=str(base_path / camera),
+            # camera_path=str(base_path),
             output_path=str(output_path),
+            image_prefix="color_",
+            image_suffix="_camera07.jpg",
             verbose=args.verbose,
             camera_name=camera,
             orbbec_cam=orbbec_cam,

@@ -6,6 +6,7 @@ from pathlib import Path
 from threading import Lock
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Tuple, List
+import rootutils
 
 from models.mediapipe_detector import MediaPipeHandDetector
 from models.openpose_detector import OpenPoseHandDetector
@@ -14,6 +15,8 @@ from .config import PipelineConfig
 from .image_ops import ImageOperations
 from .landmark_ops import LandmarkOperations
 from .processing import HandProcessor
+
+rootutils.setup_root(__file__, ".project-root", pythonpath=True)
 
 
 class HandDetectionPipeline:
@@ -26,6 +29,12 @@ class HandDetectionPipeline:
         
         # Initialize operations modules
         self.image_ops = ImageOperations(config)
+
+        self.image_ops.fit_reference_lighting_from_paths([
+            '../data/20250519_Testing/Aria/export/color/color_002400_camera07.jpg',
+            '../data/20250519_Testing/Aria/export/color/color_008485_camera07.jpg',
+            '../data/20250519_Testing/Aria/export/color/color_012329_camera07.jpg'
+        ])
         self.landmark_ops = LandmarkOperations(config)
         
         # Initialize detectors

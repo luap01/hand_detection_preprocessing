@@ -25,7 +25,7 @@ class CameraShiftConfig:
             "camera03": CameraShiftConfig(ShiftDirection.DOWN_UP, base_shift),
             "camera04": CameraShiftConfig(ShiftDirection.DIAGONAL_DOWN_LEFT, base_shift),
             "camera05": CameraShiftConfig(ShiftDirection.LEFT_RIGHT, base_shift),
-            "camera06": CameraShiftConfig(ShiftDirection.DIAGONAL_UP_LEFT, base_shift),
+            "camera06": CameraShiftConfig(ShiftDirection.DIAGONAL_UP_LEFT, base_shift)
         }
         return configs.get(camera_name, CameraShiftConfig(ShiftDirection.LEFT_RIGHT, base_shift))
 
@@ -59,6 +59,12 @@ class PipelineConfig:
     max_beta: int = 26
     min_beta: int = -45
     beta_step: int = 10
+    normalize_to_first_lighting = True
+    normalization_method = "reinhard"
+    normalization_mask_margin = 0.02
+    clahe_clip = 2.0
+    clahe_grid = 8
+    unsharp_amount = 0.0
     
     # Threading parameters
     max_workers: int = 4
